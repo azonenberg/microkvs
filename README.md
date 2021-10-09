@@ -85,7 +85,19 @@ after verification the block header is written with a new revision number one hi
 
 ## Bank header
 
+```
+uint32_t magic = 0xc0def00d
+uint32_t version
+```
+
 ## Log entry
+
+```
+char     key[16]
+uint32_t start
+uint32_t len
+uint32_t crc
+```
 
 ## Data area
 
