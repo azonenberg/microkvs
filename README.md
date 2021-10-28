@@ -88,6 +88,7 @@ after verification the block header is written with a new revision number one hi
 ```
 uint32_t magic = 0xc0def00d
 uint32_t version
+uint32_t logSize
 ```
 
 ## Log entry
