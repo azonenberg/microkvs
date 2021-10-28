@@ -324,6 +324,11 @@ bool KVS::Compact()
 		nextCache = (nextCache + 1) % cachesize;
 	}
 
+	//Update the block header with the new version number
+	uint32_t version = m_active->GetHeader()->m_version + 1;
+	if(!inactive->Write(sizeof(uint32_t), (uint8_t*)&version, sizeof(uint32_t)))
+		return false;
+
 	//Done, switch banks
 	m_active = inactive;
 	m_firstFreeLogEntry = nextLog;
