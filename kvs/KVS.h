@@ -50,6 +50,8 @@ public:
 	LogEntry* FindObject(const char* name);
 	uint8_t* MapObject(LogEntry* log);
 
+	bool ReadObject(const char* name, uint8_t* data, uint32_t len);
+
 	bool StoreObject(const char* name, uint8_t* data, uint32_t len);
 
 	uint32_t GetFreeLogEntries()

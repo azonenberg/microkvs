@@ -36,6 +36,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <stm32fxxx.h>
+#include <util/Logger.h>
+extern Logger g_log;
+
 #define HEADER_MAGIC 0xc0def00d
 
 char g_blankKey[KVS_NAMELEN];
@@ -165,6 +169,29 @@ LogEntry* KVS::FindObject(const char* name)
 uint8_t* KVS::MapObject(LogEntry* log)
 {
 	return m_active->GetBase() + log->m_start;
+}
+
+/**
+	@brief Reads an object into a provided buffer.
+
+	If the object is more than len bytes in size, the readback is truncated but no error is returned.
+
+	@param name		Name of the object to read
+	@param data		Output buffer
+	@param len		Size of the output buffer
+ */
+bool KVS::ReadObject(const char* name, uint8_t* data, uint32_t len)
+{
+	auto log = FindObject(name);
+	if(!log)
+		return false;
+
+	uint32_t readlen = log->m_len;
+	if(readlen > len)
+		readlen = len;
+
+	memcpy(data, MapObject(log), readlen);
+	return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
