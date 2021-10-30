@@ -240,6 +240,12 @@ bool KVS::StoreObject(const char* name, uint8_t* data, uint32_t len)
 	if(GetFreeDataSpace() < len)
 		return false;
 
+	//Same thing, but make sure there's header space
+	if(GetFreeLogEntries() < 1)
+		Compact();
+	if(GetFreeLogEntries() < 1)
+		return false;
+
 	//Write header data to reserve the log entry
 	uint32_t logoff = sizeof(BankHeader) + m_firstFreeLogEntry*sizeof(LogEntry);
 	uint32_t header[3] = { m_firstFreeData, len, m_active->CRC(data, len) };
