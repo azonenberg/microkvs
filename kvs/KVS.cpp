@@ -35,6 +35,7 @@
 #include "KVS.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <stm32fxxx.h>
 #include <util/Logger.h>
@@ -47,6 +48,13 @@ char g_blankKey[KVS_NAMELEN];
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Construction / destruction
 
+/**
+	@brief Creates a new KVS
+
+	@param left				One of two flash blocks, arbitrarily named "left"
+	@param right			One of two flash blocks, arbitrarily named "right"
+	@param defaultLogSize	Number of log entries to use when creating a new block header
+*/
 KVS::KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize)
 	: m_left(left)
 	, m_right(right)
@@ -370,6 +378,9 @@ bool KVS::Compact()
 	return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Zeroization
+
 /**
 	@brief Destroys all data in the INACTIVE bank.
 
@@ -394,4 +405,82 @@ void KVS::WipeAll()
 {
 	m_left->Erase();
 	m_right->Erase();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Enumeration
+
+/**
+	@brief Enumerates all objects in the KVS.
+
+	@param list Result buffer containing at least "size" entries
+	@param size	Number of entries in "list"
+
+	If the list is too small to contain all objects, the first "size" entries are written to "list" and the function
+	returns "size".
+
+	@return Number of objects written to "list"
+ */
+uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
+{
+	uint32_t ret = 0;
+
+	//Start searching the log
+	auto len = m_active->GetHeader()->m_logSize;
+	auto base = m_active->GetLog();
+	for(uint32_t i=0; i<len; i++)
+	{
+		//If start address is blank, this log entry was never written.
+		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
+		if(base[i].m_start == 0xffffffff)
+			break;
+
+		//Ignore anything with an invalid CRC
+		if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) != base[i].m_crc)
+			continue;
+
+		//See if this object is already in the output list.
+		//If so, increment the number of copies and update the size (latest object is current)
+		bool found = false;
+		for(uint32_t j=0; j<ret; j++)
+		{
+			if(memcmp(base[i].m_key, list[j].key, KVS_NAMELEN) == 0)
+			{
+				found = true;
+				list[j].size = base[i].m_len;
+				list[j].revs ++;
+				break;
+			}
+		}
+
+		//If not found, add it
+		if(!found)
+		{
+			memcpy(list[ret].key, base[i].m_key, KVS_NAMELEN);
+			list[ret].key[KVS_NAMELEN] = '\0';
+			list[ret].size = base[i].m_len;
+			list[ret].revs = 1;
+			ret ++;
+			if(ret == size)
+				break;
+		}
+	}
+
+	qsort(list, ret, sizeof(KVSListEntry), KVS::ListCompare);
+	return ret;
+}
+
+int KVS::ListCompare(const void* a, const void* b)
+{
+	auto pa = reinterpret_cast<const KVSListEntry*>(a);
+	auto pb = reinterpret_cast<const KVSListEntry*>(b);
+
+	for(int i=0; i<KVS_NAMELEN; i++)
+	{
+		if(pa->key[i] > pb->key[i])
+			return 1;
+		if(pa->key[i] < pb->key[i])
+			return -1;
+	}
+	return 0;
 }

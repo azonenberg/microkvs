@@ -40,6 +40,17 @@
 #include "../driver/StorageBank.h"
 
 /**
+	@brief A list entry used for enumerating the content of the KVS
+ */
+struct KVSListEntry
+{
+	char key[KVS_NAMELEN+1];	//[KVS_NAMELEN] is always null for easy printing
+								//even if original key is not null terminated
+	uint32_t size;				//Size of the most recent copy of the object
+	uint32_t revs;				//Number of copies (including the current one) stored in the current erase block
+};
+
+/**
 	@brief Top level KVS object
  */
 class KVS
@@ -47,33 +58,70 @@ class KVS
 public:
 	KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize);
 
+	//Main API
 	LogEntry* FindObject(const char* name);
 	uint8_t* MapObject(LogEntry* log);
-
 	bool ReadObject(const char* name, uint8_t* data, uint32_t len);
-
 	bool StoreObject(const char* name, const uint8_t* data, uint32_t len);
 
+	//Maintenance operations
+	bool Compact();
+	void WipeInactive();
+	void WipeAll();
+
+	//Enumeration
+	uint32_t EnumObjects(KVSListEntry* list, uint32_t size);
+
+	//Accessors
+public:
+
+	/**
+		@brief Returns the number of log entries in the active block available for use
+	 */
 	uint32_t GetFreeLogEntries()
 	{ return m_active->GetHeader()->m_logSize - m_firstFreeLogEntry; }
 
+	/**
+		@brief Returns the number of data bytes in the active block available for use
+	 */
 	uint32_t GetFreeDataSpace()
 	{ return m_active->GetSize() - m_firstFreeData; }
 
+	/**
+		@brief Returns true if the left bank is active
+	 */
 	bool IsLeftBankActive()
 	{ return (m_active == m_left); }
 
+	/**
+		@brief Returns true if the right bank is active
+	 */
 	bool IsRightBankActive()
 	{ return (m_active == m_right); }
 
-	bool Compact();
+	/**
+		@brief Returns the number of log spaces in the active block, both used and unused
+	 */
+	uint32_t GetLogCapacity()
+	{ return m_active->GetHeader()->m_logSize; }
 
-	void WipeInactive();
-	void WipeAll();
+	/**
+		@brief Returns the total number of bytes in the active block including header, log, and data
+	 */
+	uint32_t GetBlockSize()
+	{ return m_active->GetSize(); }
+
+	/**
+		@brief Returns the total space allocated to data, both used and unused
+	 */
+	uint32_t GetDataCapacity()
+	{ return GetBlockSize() - (sizeof(BankHeader) + GetLogCapacity()*sizeof(LogEntry)); }
 
 protected:
 	void FindCurrentBank();
 	void ScanCurrentBank();
+
+	static int ListCompare(const void* a, const void* b);
 
 	void InitializeBank(StorageBank* bank);
 
