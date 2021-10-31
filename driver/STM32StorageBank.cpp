@@ -46,13 +46,13 @@ bool STM32StorageBank::Erase()
 	return Flash::BlockErase(m_baseAddress);
 }
 
-bool STM32StorageBank::Write(uint32_t offset, uint8_t* data, uint32_t len)
+bool STM32StorageBank::Write(uint32_t offset, const uint8_t* data, uint32_t len)
 {
 	return Flash::Write(GetBase() + offset, data, len);
 }
 
 //TODO: use CRC hard IP to speed this up!!
-uint32_t STM32StorageBank::CRC(uint8_t* ptr, uint32_t size)
+uint32_t STM32StorageBank::CRC(const uint8_t* ptr, uint32_t size)
 {
 	uint32_t poly = 0xedb88320;
 

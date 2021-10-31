@@ -54,8 +54,8 @@ public:
 	}
 
 	virtual bool Erase();
-	virtual bool Write(uint32_t offset, uint8_t* data, uint32_t len);
-	virtual uint32_t CRC(uint8_t* ptr, uint32_t size);
+	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len);
+	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size);
 
 protected:
 	uint8_t m_data[TEST_BANK_SIZE];

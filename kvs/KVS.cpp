@@ -226,7 +226,7 @@ void KVS::InitializeBank(StorageBank* bank)
 	@param data		Object content
 	@param len		Length of the object
  */
-bool KVS::StoreObject(const char* name, uint8_t* data, uint32_t len)
+bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 {
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};

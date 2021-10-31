@@ -52,7 +52,7 @@ public:
 
 	bool ReadObject(const char* name, uint8_t* data, uint32_t len);
 
-	bool StoreObject(const char* name, uint8_t* data, uint32_t len);
+	bool StoreObject(const char* name, const uint8_t* data, uint32_t len);
 
 	uint32_t GetFreeLogEntries()
 	{ return m_active->GetHeader()->m_logSize - m_firstFreeLogEntry; }

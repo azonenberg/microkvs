@@ -61,10 +61,10 @@ public:
 
 	//Raw block access API (needs to be implemented by derived driver class)
 	virtual bool Erase() =0;
-	virtual bool Write(uint32_t offset, uint8_t* data, uint32_t len) =0;
+	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len) =0;
 
 	//Checksumming of block content (may be HW accelerated)
-	virtual uint32_t CRC(uint8_t* ptr, uint32_t size) =0;
+	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size) =0;
 
 	BankHeader* GetHeader()
 	{ return reinterpret_cast<BankHeader*>(m_baseAddress); }

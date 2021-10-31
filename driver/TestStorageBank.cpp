@@ -42,13 +42,13 @@ bool TestStorageBank::Erase()
 	return true;
 }
 
-bool TestStorageBank::Write(uint32_t offset, uint8_t* data, uint32_t len)
+bool TestStorageBank::Write(uint32_t offset, const uint8_t* data, uint32_t len)
 {
 	memcpy(m_data+offset, data, len);
 	return true;
 }
 
-uint32_t TestStorageBank::CRC(uint8_t* ptr, uint32_t size)
+uint32_t TestStorageBank::CRC(const uint8_t* ptr, uint32_t size)
 {
 	uint32_t poly = 0xedb88320;
 
