@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021 Andrew D. Zonenberg and contributors                                                              *
+* Copyright (c) 2021-2022 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -37,7 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <stm32fxxx.h>
+#include <stm32.h>
 #include <util/Logger.h>
 extern Logger g_log;
 
@@ -102,6 +102,11 @@ void KVS::ScanCurrentBank()
 	//If we have at least one log entry in the store, free data starts after the last log entry ends
 	else
 		m_firstFreeData = lastlog->m_start + lastlog->m_len;
+
+	//Round free data pointer to start of next write block
+	#ifdef MICROKVS_WRITE_BLOCK_SIZE
+		m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
+	#endif
 }
 
 /**
@@ -264,6 +269,10 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	//Write and verify object content
 	auto offset = m_firstFreeData;
 	m_firstFreeData += len;
+	#ifdef MICROKVS_WRITE_BLOCK_SIZE
+		m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
+	#endif
+
 	if(!m_active->Write(offset, data, len))
 		return false;
 	if(memcmp(data, m_active->GetBase() + offset, len) != 0)
@@ -374,6 +383,11 @@ bool KVS::Compact()
 	m_active = inactive;
 	m_firstFreeLogEntry = nextLog;
 	m_firstFreeData = nextData;
+
+	//Round free data pointer to start of next write block
+	#ifdef MICROKVS_WRITE_BLOCK_SIZE
+		m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
+	#endif
 
 	return true;
 }

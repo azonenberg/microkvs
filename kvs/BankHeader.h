@@ -1,8 +1,8 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* microkvs v0.1                                                                                                       *
+* microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021 Andrew D. Zonenberg and contributors                                                              *
+* Copyright (c) 2021-2022 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -45,6 +45,11 @@ public:
 	uint32_t	m_magic;
 	uint32_t	m_version;
 	uint32_t	m_logSize;
+
+	//pad to write block size
+	#ifdef MICROKVS_WRITE_BLOCK_SIZE
+	uint8_t		m_padding[MICROKVS_WRITE_BLOCK_SIZE - (12 % MICROKVS_WRITE_BLOCK_SIZE)];
+	#endif
 };
 
 #endif

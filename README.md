@@ -34,9 +34,15 @@ treats each bank as one erase block at a logical level even if it physically con
 erased in sequence, since the typical use case is to store a small amount of configuration data which easily fits in a
 single flash block.
 
+microkvs prefers byte writable storage. It can function with storage that has larger write block granularity (for
+example STM32H7 internal flash memory, with a 256 bit / 32 byte write block size) however overhead is increased as all
+data structures must be padded to multiples of a write block. Byte writable storage is assumed by default; to enable
+padding set a global preprocessor definition MICROKVS_WRITE_BLOCK_SIZE to the desired block size.
+
 The store is divided into two regions, log and data. The split must be decided at compile time and cannot be changed
 later on. The optimal split is application dependent and varies based on average file size weighted by how often each
-file is modified. 28 bytes of storage are required in the log area for each object stored in the data area.
+file is modified. A minimum of 28 bytes of storage are required in the log area for each object stored in the data
+area, unless padded by minimum write block sizes.
 
 For example, with 256K byte storage and 228 byte average file size, a good split would be 28K bytes of log and 228K
 bytes of data. This would allow roughly 1024 objects worth of both log and payload to be stored before both areas are
