@@ -36,7 +36,11 @@
 #ifndef LogEntry_h
 #define LogEntry_h
 
+#ifdef MICROKVS_WRITE_BLOCK_SIZE
+#define KVS_NAMELEN MICROKVS_WRITE_BLOCK_SIZE
+#else
 #define KVS_NAMELEN 16
+#endif
 
 /**
 	@brief A single entry in the flash log
