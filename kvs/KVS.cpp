@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021-2022 Andrew D. Zonenberg and contributors                                                         *
+* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -37,8 +37,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef SIMULATION
 #include <stm32.h>
+#endif
+
 #include <util/Logger.h>
+
 extern Logger g_log;
 
 #define HEADER_MAGIC 0xc0def00d
