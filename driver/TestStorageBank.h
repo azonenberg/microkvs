@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021 Andrew D. Zonenberg and contributors                                                              *
+* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -56,6 +56,11 @@ public:
 	virtual bool Erase();
 	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len);
 	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size);
+
+	#ifdef SIMULATION
+	void Load(const char* path);
+	void Serialize(const char* path);
+	#endif
 
 protected:
 	uint8_t m_data[TEST_BANK_SIZE];

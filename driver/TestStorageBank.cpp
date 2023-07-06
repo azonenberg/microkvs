@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021 Andrew D. Zonenberg and contributors                                                              *
+* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -35,6 +35,11 @@
 #include <stdint.h>
 #include <memory.h>
 #include "TestStorageBank.h"
+
+#ifdef SIMULATION
+#include <stdio.h>
+#include <unistd.h>
+#endif
 
 bool TestStorageBank::Erase()
 {
@@ -70,3 +75,33 @@ uint32_t TestStorageBank::CRC(const uint8_t* ptr, uint32_t size)
 				((crc & 0x00ff0000) >> 8) |
 				 (crc >> 24) );
 }
+
+#ifdef SIMULATION
+
+void TestStorageBank::Load(const char* path)
+{
+	//Open file and silently exit if not found
+	//(this is a normal condition on the first run)
+	FILE* fp = fopen(path, "rb");
+	if(!fp)
+		return;
+
+	if(TEST_BANK_SIZE != fread(m_data, 1, TEST_BANK_SIZE, fp))
+		perror("fail to read KVS data");
+	fclose(fp);
+}
+
+void TestStorageBank::Serialize(const char* path)
+{
+	FILE* fp = fopen(path, "wb");
+	if(!fp)
+	{
+		perror("fail to open KVS file for writing");
+		return;
+	}
+	if(TEST_BANK_SIZE != fwrite(m_data, 1, TEST_BANK_SIZE, fp))
+		perror("fail to write KVS data");
+	fclose(fp);
+}
+
+#endif
