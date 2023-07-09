@@ -36,7 +36,9 @@
 #ifndef TestStorageBank_h
 #define TestStorageBank_h
 
+#ifndef TEST_BANK_SIZE
 #define TEST_BANK_SIZE 32768
+#endif
 
 #include <string.h>
 #include "StorageBank.h"
