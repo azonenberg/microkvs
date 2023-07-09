@@ -49,6 +49,13 @@ extern Logger g_log;
 
 char g_blankKey[KVS_NAMELEN];
 
+//Instantiate common KVS overrides so they don't get inlined
+template uint16_t KVS::ReadObject(const char* name, uint16_t defaultValue);
+
+template bool KVS::StoreObjectIfNecessary(const char* name, uint16_t currentValue, uint16_t defaultValue);
+
+template bool KVS::StoreObjectIfNecessary(uint16_t currentValue, uint16_t defaultValue, const char* format, ...);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Construction / destruction
 

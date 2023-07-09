@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs v0.1                                                                                                        *
 *                                                                                                                      *
-* Copyright (c) 2021 Andrew D. Zonenberg and contributors                                                              *
+* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -39,6 +39,9 @@
 #include <stdint.h>
 #include "../driver/StorageBank.h"
 
+//TODO: make this an optional component?
+#include <stm32-cpp/src/util/StringBuffer.h>
+
 /**
 	@brief A list entry used for enumerating the content of the KVS
  */
@@ -71,6 +74,67 @@ public:
 
 	//Enumeration
 	uint32_t EnumObjects(KVSListEntry* list, uint32_t size);
+
+	/**
+		@brief Reads a value from the KVS, returning a default value if not found
+	 */
+	template<class T>
+	T ReadObject(const char* name, T defaultValue)
+	{
+		auto hlog = FindObject(name);
+		if(hlog)
+			return *reinterpret_cast<const T*>(MapObject(hlog));
+		else
+			return defaultValue;
+	}
+
+	/*
+		@brief Writes a value to the KVS if necessary.
+
+		If the value is the same as the previous value in the KVS, or there is no previous value
+		but the value being written is the same as the default value, no data is written.
+	 */
+	template<class T>
+	bool StoreObjectIfNecessary(const char* name, T currentValue, T defaultValue)
+	{
+		//See if the value is already there
+		auto hlog = FindObject(name);
+
+		//If not found: write if non-default
+		if(!hlog)
+		{
+			if(currentValue != defaultValue)
+				return StoreObject(name, (const uint8_t*)&currentValue, sizeof(currentValue));
+		}
+
+		//If found: write if changed
+		else
+		{
+			if(currentValue != *reinterpret_cast<const T*>(MapObject(hlog)))
+				return StoreObject(name, (const uint8_t*)&currentValue, sizeof(currentValue));
+		}
+		return true;
+	}
+
+	/*
+		@brief Writes a value to the KVS if necessary, using a sprintf'd object name
+
+		If the value is the same as the previous value in the KVS, or there is no previous value
+		but the value being written is the same as the default value, no data is written.
+	 */
+	template<class T>
+	bool StoreObjectIfNecessary(T currentValue, T defaultValue, const char* format, ...)
+	{
+		char objname[KVS_NAMELEN+1];
+		StringBuffer sbuf(objname, sizeof(objname));
+
+		__builtin_va_list list;
+		__builtin_va_start(list, format);
+		sbuf.Printf(format, list);
+		__builtin_va_end(list);
+
+		return StoreObjectIfNecessary(objname, currentValue, defaultValue);
+	}
 
 	//Accessors
 public:
