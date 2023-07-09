@@ -88,6 +88,23 @@ public:
 			return defaultValue;
 	}
 
+	/**
+		@brief Reads a value from the KVS, returning a default value if not found
+	 */
+	template<class T>
+	T ReadObject(T defaultValue, const char* format, ...)
+	{
+		char objname[KVS_NAMELEN+1] = {0};
+		StringBuffer sbuf(objname, sizeof(objname));
+
+		__builtin_va_list list;
+		__builtin_va_start(list, format);
+		sbuf.Printf(format, list);
+		__builtin_va_end(list);
+
+		return ReadObject<T>(objname, defaultValue);
+	}
+
 	/*
 		@brief Writes a value to the KVS if necessary.
 
@@ -125,7 +142,7 @@ public:
 	template<class T>
 	bool StoreObjectIfNecessary(T currentValue, T defaultValue, const char* format, ...)
 	{
-		char objname[KVS_NAMELEN+1];
+		char objname[KVS_NAMELEN+1] = {0};
 		StringBuffer sbuf(objname, sizeof(objname));
 
 		__builtin_va_list list;
