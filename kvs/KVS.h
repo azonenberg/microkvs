@@ -36,6 +36,10 @@
 #ifndef KVS_h
 #define KVS_h
 
+#ifndef SIMULATION
+#include <stm32.h>
+#endif
+
 #include <stdint.h>
 #include "../driver/StorageBank.h"
 

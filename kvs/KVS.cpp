@@ -37,10 +37,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifndef SIMULATION
-#include <stm32.h>
-#endif
-
 #include <util/Logger.h>
 
 extern Logger g_log;
