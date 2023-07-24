@@ -159,7 +159,10 @@ LogEntry* KVS::FindObject(const char* name)
 {
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wstringop-truncation"
 	strncpy(key, name, KVS_NAMELEN);
+	#pragma GCC diagnostic pop
 
 	//Start searching the log
 	auto len = m_active->GetHeader()->m_logSize;
@@ -252,7 +255,10 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 {
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wstringop-truncation"
 	strncpy(key, name, KVS_NAMELEN);
+	#pragma GCC diagnostic pop
 
 	//If there's not enough space for the file, compact the store to make more room
 	if(GetFreeDataSpace() < len)
