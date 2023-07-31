@@ -67,9 +67,43 @@ public:
 
 	//Main API
 	LogEntry* FindObject(const char* name);
+
+	/**
+		@brief Wrapper around FindObject with sprintf-style formatting
+	 */
+	LogEntry* FindObjectF(const char* format, ...)
+	{
+		char objname[KVS_NAMELEN+1] = {0};
+		StringBuffer sbuf(objname, sizeof(objname));
+
+		__builtin_va_list list;
+		__builtin_va_start(list, format);
+		sbuf.Printf(format, list);
+		__builtin_va_end(list);
+
+		return FindObject(objname);
+	}
+
 	uint8_t* MapObject(LogEntry* log);
 	bool ReadObject(const char* name, uint8_t* data, uint32_t len);
+
 	bool StoreObject(const char* name, const uint8_t* data, uint32_t len);
+
+	/**
+		@brief Wrapper around StoreObject with sprintf-style formatting
+	 */
+	bool StoreObject(const uint8_t* data, uint32_t len, const char* format, ...)
+	{
+		char objname[KVS_NAMELEN+1] = {0};
+		StringBuffer sbuf(objname, sizeof(objname));
+
+		__builtin_va_list list;
+		__builtin_va_start(list, format);
+		sbuf.Printf(format, list);
+		__builtin_va_end(list);
+
+		return StoreObject(objname, data, len);
+	}
 
 	//Maintenance operations
 	bool Compact();
