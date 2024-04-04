@@ -1,8 +1,8 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* microkvs v0.1                                                                                                        *
+* microkvs                                                                                                             *
 *                                                                                                                      *
-* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
+* Copyright (c) 2021-2024 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -185,6 +185,11 @@ LogEntry* KVS::FindObject(const char* name)
 
 		//If CRC mismatch, entry is corrupted - fall back to the previous entry
 	}
+
+	//If the log entry has no data, return null
+	if(log && (log->m_len == 0))
+		return nullptr;
+
 	return log;
 }
 
@@ -281,17 +286,20 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
 		return false;
 
-	//Write and verify object content
-	auto offset = m_firstFreeData;
-	m_firstFreeData += len;
-	#ifdef MICROKVS_WRITE_BLOCK_SIZE
-		m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
-	#endif
+	//Write and verify object content (skip this if there's no data, empty objects are allowed)
+	if(len != 0)
+	{
+		auto offset = m_firstFreeData;
+		m_firstFreeData += len;
+		#ifdef MICROKVS_WRITE_BLOCK_SIZE
+			m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
+		#endif
 
-	if(!m_active->Write(offset, data, len))
-		return false;
-	if(memcmp(data, m_active->GetBase() + offset, len) != 0)
-		return false;
+		if(!m_active->Write(offset, data, len))
+			return false;
+		if(memcmp(data, m_active->GetBase() + offset, len) != 0)
+			return false;
+	}
 
 	//Write and verify object name
 	if(!m_active->Write(logoff, reinterpret_cast<uint8_t*>(key), KVS_NAMELEN))
