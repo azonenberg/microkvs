@@ -311,6 +311,33 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	return true;
 }
 
+/**
+	@brief Writes a value to the KVS if necessary.
+
+	If the value is the same as the previous value in the KVS, or there is no previous value
+	but the value being written is the same as the default value, no data is written.
+ */
+bool KVS::StoreStringObjectIfNecessary(const char* name, const char* currentValue, const char* defaultValue)
+{
+	auto valueLen = strlen(currentValue);
+
+	//Check if we already have the same string stored, early out if so
+	auto hobject = FindObject(name);
+	if(hobject)
+	{
+		auto oldval = (const char*)MapObject(hobject);
+		if( (valueLen == hobject->m_len) && (!strncmp(currentValue, oldval, hobject->m_len)) )
+			return true;
+	}
+
+	//No existing object. Before we store the new one, check if it's the default and skip the store if so
+	else if(!strcmp(currentValue, defaultValue))
+		return true;
+
+	//Need to store the value (different from default and/or existing value
+	return StoreObject(name, (uint8_t*)currentValue, valueLen);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Compaction
 

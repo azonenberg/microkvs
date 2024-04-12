@@ -1,8 +1,8 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* microkvs v0.1                                                                                                        *
+* microkvs                                                                                                             *
 *                                                                                                                      *
-* Copyright (c) 2021-2023 Andrew D. Zonenberg and contributors                                                         *
+* Copyright (c) 2021-2024 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -143,7 +143,9 @@ public:
 		return ReadObject<T>(objname, defaultValue);
 	}
 
-	/*
+	bool StoreStringObjectIfNecessary(const char* name, const char* currentValue, const char* defaultValue);
+
+	/**
 		@brief Writes a value to the KVS if necessary.
 
 		If the value is the same as the previous value in the KVS, or there is no previous value
@@ -171,7 +173,7 @@ public:
 		return true;
 	}
 
-	/*
+	/**
 		@brief Writes a value to the KVS if necessary, using a sprintf'd object name
 
 		If the value is the same as the previous value in the KVS, or there is no previous value
