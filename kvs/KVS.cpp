@@ -289,7 +289,8 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
 		return false;
 
-	//Write and verify object content (skip this if there's no data, empty objects are allowed)
+	//Write and verify object content
+	//(skip this if there's no data, empty objects are allowed and treated as nonexistent)
 	if(len != 0)
 	{
 		auto offset = m_firstFreeData;
@@ -410,17 +411,21 @@ bool KVS::Compact()
 			continue;
 
 		//Not found. This is the most up to date version.
-		//Copy the data first, then the log
-		if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
-			return false;
-		LogEntry entry = log[i];
-		entry.m_start = nextData;
-		if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
-			return false;
+		//Only write it if there's valid data (empty objects get removed during the compaction step)
+		if(log[i].m_len != 0)
+		{
+			//Copy the data first, then the log
+			if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
+				return false;
+			LogEntry entry = log[i];
+			entry.m_start = nextData;
+			if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
+				return false;
 
-		//Update pointers for next output
-		nextData += log[i].m_len;
-		nextLog ++;
+			//Update pointers for next output
+			nextData += log[i].m_len;
+			nextLog ++;
+		}
 
 		//Add this entry to the cache of recently copied stuff
 		memcpy(cache[nextCache], log[i].m_key, KVS_NAMELEN);
