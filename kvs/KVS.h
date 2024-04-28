@@ -209,6 +209,12 @@ public:
 	{ return m_active->GetSize() - m_firstFreeData; }
 
 	/**
+		@brief Returns the version of the bank header
+	 */
+	uint32_t GetBankHeaderVersion()
+	{ return m_active->GetHeader()->m_version; }
+
+	/**
 		@brief Returns true if the left bank is active
 	 */
 	bool IsLeftBankActive()
