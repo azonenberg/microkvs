@@ -1,6 +1,6 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* microkvs v0.1                                                                                                        *
+* microkvs                                                                                                             *
 *                                                                                                                      *
 * Copyright (c) 2021-2022 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
@@ -36,10 +36,31 @@
 #ifndef LogEntry_h
 #define LogEntry_h
 
+//Block writable flash
 #ifdef MICROKVS_WRITE_BLOCK_SIZE
-#define KVS_NAMELEN MICROKVS_WRITE_BLOCK_SIZE
+
+	//User-specified block size? Make sure it's valid
+	#ifdef KVS_NAMELEN
+
+		//Name length must be at least one write block
+		#if ( KVS_NAMELEN < MICROKVS_WRITE_BLOCK_SIZE )
+			#error KVS_NAMELEN must be an integer multiple of MICROKVS_WRITE_BLOCK_SIZE
+		#endif
+
+		//Block size must evenly divide name length
+		#if ( (KVS_NAMELEN % MICROKVS_WRITE_BLOCK_SIZE) != 0 )
+			#error KVS_NAMELEN must be an integer multiple of MICROKVS_WRITE_BLOCK_SIZE
+		#endif
+
+
+	//Use write block size as default name length
+	#else
+		#define KVS_NAMELEN MICROKVS_WRITE_BLOCK_SIZE
+	#endif
+
+//Byte writable flash
 #else
-#define KVS_NAMELEN 16
+	#define KVS_NAMELEN 16
 #endif
 
 /**
