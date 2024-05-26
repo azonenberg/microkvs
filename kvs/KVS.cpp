@@ -115,10 +115,7 @@ void KVS::ScanCurrentBank()
 	else
 		m_firstFreeData = lastlog->m_start + lastlog->m_len;
 
-	//Round free data pointer to start of next write block
-	#ifdef MICROKVS_WRITE_BLOCK_SIZE
-		m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
-	#endif
+	m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData);
 }
 
 /**
@@ -147,7 +144,8 @@ void KVS::FindCurrentBank()
 		m_active = m_right;
 
 	//If BOTH banks are active, the higher version number is our active bank
-	else if(lh->m_version > rh->m_version)
+	//(as long as that version number isn't invalid)
+	else if( (lh->m_version > rh->m_version) && (lh->m_version != 0xffffffff) )
 		m_active = m_left;
 	else
 		m_active = m_right;
@@ -243,17 +241,22 @@ bool KVS::ReadObject(const char* name, uint8_t* data, uint32_t len)
 /**
 	@brief Initializes a blank bank with a header
  */
-void KVS::InitializeBank(StorageBank* bank)
+bool KVS::InitializeBank(StorageBank* bank)
 {
 	//Erase the bank just to be safe
-	bank->Erase();
+	if(!bank->Erase())
+		return false;
 
 	//Write the content of the new block header
 	BankHeader header;
+	memset(&header, 0, sizeof(header));
 	header.m_magic = HEADER_MAGIC;
 	header.m_version = 0;
 	header.m_logSize = m_defaultLogSize;
-	bank->Write(0, (uint8_t*)&header, sizeof(header));
+	if(bank->Write(0, (uint8_t*)&header, sizeof(header)))
+		return false;
+
+	return true;
 }
 
 /**
@@ -280,7 +283,10 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 
 	//If there's not enough space for the file, compact the store to make more room
 	if(GetFreeDataSpace() < len)
-		Compact();
+	{
+		if(!Compact())
+			return false;
+	}
 
 	//If not enough space after compaction, we're out of flash. Give up.
 	if(GetFreeDataSpace() < len)
@@ -334,16 +340,20 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 				break;
 
 			//not blank, move forward one write block and try again
-			#ifdef MICROKVS_WRITE_BLOCK_SIZE
-				m_firstFreeData += MICROKVS_WRITE_BLOCK_SIZE;
-			#else
-				m_firstFreeData ++;
-			#endif
+			m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + 1);
 			offset = m_firstFreeData;
 
 			//If no longer enough space, try compacting
 			if(GetFreeDataSpace() < len)
-				Compact();
+			{
+				if(!Compact())
+				{
+					#ifdef HAVE_FLASH_ECC
+						SCB_EnableDataFaults(sr);
+					#endif
+					return false;
+				}
+			}
 			if(GetFreeDataSpace() < len)
 			{
 				#ifdef HAVE_FLASH_ECC
@@ -353,11 +363,7 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 			}
 		}
 
-		m_firstFreeData += len;
-		#ifdef MICROKVS_WRITE_BLOCK_SIZE
-			m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
-		#endif
-
+		m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + len);
 		if(!m_active->Write(offset, data, len))
 		{
 			#ifdef HAVE_FLASH_ECC
@@ -433,13 +439,19 @@ bool KVS::StoreStringObjectIfNecessary(const char* name, const char* currentValu
  */
 bool KVS::Compact()
 {
+	#ifdef HAVE_FLASH_ECC
+		//Disable bus errors on data fetch
+		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
+		auto sr = SCB_DisableDataFaults();
+	#endif
+
 	const uint32_t cachesize = 16;
 	char cache[cachesize][KVS_NAMELEN];
 	memset(cache, 0xff, sizeof(cache));
 	uint32_t nextCache = 0;
 
 	//Find the INACTIVE storage bank
-	StorageBank* inactive = NULL;
+	StorageBank* inactive = nullptr;
 	if(m_active == m_left)
 		inactive = m_right;
 	else
@@ -448,19 +460,19 @@ bool KVS::Compact()
 	//Erase the inactive bank and give it a header, but do NOT write the version number yet.
 	//If we're interrupted during the compaction, we want the block to read as invalid.
 	if(!inactive->Erase())
+	{
+		#ifdef HAVE_FLASH_ECC
+			SCB_EnableDataFaults(sr);
+		#endif
 		return false;
-	uint32_t magic = HEADER_MAGIC;
-	if(!inactive->Write(0, (uint8_t*)&magic, sizeof(uint32_t)))
-		return false;
-	if(!inactive->Write(2*sizeof(uint32_t), (uint8_t*)&m_defaultLogSize, sizeof(m_defaultLogSize)))
-		return false;
+	}
 
 	//Loop over the log and copy files one by one
 	auto base = m_active->GetBase();
 	auto log = m_active->GetLog();
 	auto outlog = inactive->GetLog();
 	uint32_t nextLog = 0;
-	uint32_t nextData = sizeof(BankHeader) + m_defaultLogSize*sizeof(LogEntry);
+	uint32_t nextData = RoundUpToWriteBlockSize(sizeof(BankHeader) + m_defaultLogSize*sizeof(LogEntry));
 	for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
 	{
 		//See if this item is in the cache.
@@ -499,14 +511,24 @@ bool KVS::Compact()
 		{
 			//Copy the data first, then the log
 			if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
+			{
+				#ifdef HAVE_FLASH_ECC
+					SCB_EnableDataFaults(sr);
+				#endif
 				return false;
+			}
 			LogEntry entry = log[i];
 			entry.m_start = nextData;
 			if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
+			{
+				#ifdef HAVE_FLASH_ECC
+					SCB_EnableDataFaults(sr);
+				#endif
 				return false;
+			}
 
 			//Update pointers for next output
-			nextData += log[i].m_len;
+			nextData = RoundUpToWriteBlockSize(nextData + log[i].m_len);
 			nextLog ++;
 		}
 
@@ -515,10 +537,24 @@ bool KVS::Compact()
 		nextCache = (nextCache + 1) % cachesize;
 	}
 
-	//Update the block header with the new version number
-	uint32_t version = m_active->GetHeader()->m_version + 1;
-	if(!inactive->Write(sizeof(uint32_t), (uint8_t*)&version, sizeof(uint32_t)))
+	//Write block header with the new version number
+	//Need to write the entire bank header in one go, since our flash write block size may be >4 bytes!
+	BankHeader header;
+	memset(&header, 0, sizeof(header));
+	header.m_magic = HEADER_MAGIC;
+	header.m_version = m_active->GetHeader()->m_version + 1;
+	header.m_logSize = m_defaultLogSize;
+	if(!inactive->Write(0, (uint8_t*)&header, sizeof(header)))
+	{
+		#ifdef HAVE_FLASH_ECC
+			SCB_EnableDataFaults(sr);
+		#endif
 		return false;
+	}
+
+	#ifdef HAVE_FLASH_ECC
+		SCB_EnableDataFaults(sr);
+	#endif
 
 	//Done, switch banks
 	m_active = inactive;

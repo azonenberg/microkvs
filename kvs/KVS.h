@@ -244,13 +244,22 @@ public:
 	uint32_t GetDataCapacity()
 	{ return GetBlockSize() - (sizeof(BankHeader) + GetLogCapacity()*sizeof(LogEntry)); }
 
+	///@brief Rounds a value up to the next multiple of the flash write block size
+	uint32_t RoundUpToWriteBlockSize(uint32_t val)
+	{
+		#ifdef MICROKVS_WRITE_BLOCK_SIZE
+			val += (MICROKVS_WRITE_BLOCK_SIZE - (val % MICROKVS_WRITE_BLOCK_SIZE));
+		#endif
+		return val;
+	}
+
 protected:
 	void FindCurrentBank();
 	void ScanCurrentBank();
 
 	static int ListCompare(const void* a, const void* b);
 
-	void InitializeBank(StorageBank* bank);
+	bool InitializeBank(StorageBank* bank);
 
 	///@brief First storage bank ("left")
 	StorageBank* m_left;
