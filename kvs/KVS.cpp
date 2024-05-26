@@ -160,6 +160,12 @@ void KVS::FindCurrentBank()
  */
 LogEntry* KVS::FindObject(const char* name)
 {
+	#ifdef HAVE_FLASH_ECC
+		//Disable bus errors on data fetch
+		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
+		auto sr = SCB_DisableDataFaults();
+	#endif
+
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
 	#pragma GCC diagnostic push
@@ -188,6 +194,10 @@ LogEntry* KVS::FindObject(const char* name)
 
 		//If CRC mismatch, entry is corrupted - fall back to the previous entry
 	}
+
+	#ifdef HAVE_FLASH_ECC
+		SCB_EnableDataFaults(sr);
+	#endif
 
 	//If the log entry has no data, return null
 	if(log && (log->m_len == 0))
@@ -282,34 +292,107 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	if(GetFreeLogEntries() < 1)
 		return false;
 
+	#ifdef HAVE_FLASH_ECC
+		//Disable bus errors on data fetch
+		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
+		auto sr = SCB_DisableDataFaults();
+	#endif
+
 	//Write header data to reserve the log entry
 	uint32_t logoff = sizeof(BankHeader) + m_firstFreeLogEntry*sizeof(LogEntry);
 	uint32_t header[3] = { m_firstFreeData, len, m_active->CRC(data, len) };
 	m_firstFreeLogEntry ++;
 	if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
+	{
+		#ifdef HAVE_FLASH_ECC
+			SCB_EnableDataFaults(sr);
+		#endif
 		return false;
+	}
 
 	//Write and verify object content
 	//(skip this if there's no data, empty objects are allowed and treated as nonexistent)
 	if(len != 0)
 	{
 		auto offset = m_firstFreeData;
+
+		//Blank check the region as a sanity check
+		auto base = m_active->GetBase();
+		while(true)
+		{
+			bool blank = true;
+			for(uint32_t i=0; i<len; i++)
+			{
+				if(base[offset + i] != 0xff)
+				{
+					blank = false;
+					break;
+				}
+			}
+
+			if(blank)
+				break;
+
+			//not blank, move forward one write block and try again
+			#ifdef MICROKVS_WRITE_BLOCK_SIZE
+				m_firstFreeData += MICROKVS_WRITE_BLOCK_SIZE;
+			#else
+				m_firstFreeData ++;
+			#endif
+			offset = m_firstFreeData;
+
+			//If no longer enough space, try compacting
+			if(GetFreeDataSpace() < len)
+				Compact();
+			if(GetFreeDataSpace() < len)
+			{
+				#ifdef HAVE_FLASH_ECC
+					SCB_EnableDataFaults(sr);
+				#endif
+				return false;
+			}
+		}
+
 		m_firstFreeData += len;
 		#ifdef MICROKVS_WRITE_BLOCK_SIZE
 			m_firstFreeData += (MICROKVS_WRITE_BLOCK_SIZE - (m_firstFreeData % MICROKVS_WRITE_BLOCK_SIZE));
 		#endif
 
 		if(!m_active->Write(offset, data, len))
+		{
+			#ifdef HAVE_FLASH_ECC
+				SCB_EnableDataFaults(sr);
+			#endif
 			return false;
-		if(memcmp(data, m_active->GetBase() + offset, len) != 0)
+		}
+		if(memcmp(data, base + offset, len) != 0)
+		{
+			#ifdef HAVE_FLASH_ECC
+				SCB_EnableDataFaults(sr);
+			#endif
 			return false;
+		}
 	}
 
 	//Write and verify object name
 	if(!m_active->Write(logoff, reinterpret_cast<uint8_t*>(key), KVS_NAMELEN))
+	{
+		#ifdef HAVE_FLASH_ECC
+			SCB_EnableDataFaults(sr);
+		#endif
 		return false;
+	}
 	if(memcmp(key, m_active->GetBase() + logoff, KVS_NAMELEN) != 0)
+	{
+		#ifdef HAVE_FLASH_ECC
+			SCB_EnableDataFaults(sr);
+		#endif
 		return false;
+	}
+
+	#ifdef HAVE_FLASH_ECC
+		SCB_EnableDataFaults(sr);
+	#endif
 
 	//All good!
 	return true;
@@ -495,6 +578,12 @@ void KVS::WipeAll()
  */
 uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 {
+	#ifdef HAVE_FLASH_ECC
+		//Disable bus errors on data fetch
+		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
+		auto sr = SCB_DisableDataFaults();
+	#endif
+
 	uint32_t ret = 0;
 
 	//Start searching the log
@@ -537,6 +626,10 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 				break;
 		}
 	}
+
+	#ifdef HAVE_FLASH_ECC
+		SCB_EnableDataFaults(sr);
+	#endif
 
 	qsort(list, ret, sizeof(KVSListEntry), KVS::ListCompare);
 	return ret;
