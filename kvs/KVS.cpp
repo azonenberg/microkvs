@@ -158,12 +158,6 @@ void KVS::FindCurrentBank()
  */
 LogEntry* KVS::FindObject(const char* name)
 {
-	#ifdef HAVE_FLASH_ECC
-		//Disable bus errors on data fetch
-		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
-		auto sr = SCB_DisableDataFaults();
-	#endif
-
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
 	#pragma GCC diagnostic push
@@ -171,35 +165,35 @@ LogEntry* KVS::FindObject(const char* name)
 	strncpy(key, name, KVS_NAMELEN);
 	#pragma GCC diagnostic pop
 
-	//Start searching the log
-	auto len = m_active->GetHeader()->m_logSize;
-	auto base = m_active->GetLog();
 	LogEntry* log = nullptr;
-	for(uint32_t i=0; i<len; i++)
+
+	unsafe
 	{
-		//If start address is blank, this log entry was never written.
-		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-		if(base[i].m_start == 0xffffffff)
-			break;
+		//Start searching the log
+		auto len = m_active->GetHeader()->m_logSize;
+		auto base = m_active->GetLog();
+		for(uint32_t i=0; i<len; i++)
+		{
+			//If start address is blank, this log entry was never written.
+			//We must be at the end of the log. Whatever we've found by this point is all there is to find.
+			if(base[i].m_start == 0xffffffff)
+				break;
 
-		//Skip anything without the right name
-		if(memcmp(base[i].m_key, key, KVS_NAMELEN) != 0)
-			continue;
+			//Skip anything without the right name
+			if(memcmp(base[i].m_key, key, KVS_NAMELEN) != 0)
+				continue;
 
-		//If CRC match, this is the latest log entry
-		if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) == base[i].m_crc)
-			log = &base[i];
+			//If CRC match, this is the latest log entry
+			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) == base[i].m_crc)
+				log = &base[i];
 
-		//If CRC mismatch, entry is corrupted - fall back to the previous entry
+			//If CRC mismatch, entry is corrupted - fall back to the previous entry
+		}
+
+		//If the log entry has no data, return null
+		if(log && (log->m_len == 0))
+			return nullptr;
 	}
-
-	#ifdef HAVE_FLASH_ECC
-		SCB_EnableDataFaults(sr);
-	#endif
-
-	//If the log entry has no data, return null
-	if(log && (log->m_len == 0))
-		return nullptr;
 
 	return log;
 }
@@ -298,107 +292,65 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	if(GetFreeLogEntries() < 1)
 		return false;
 
-	#ifdef HAVE_FLASH_ECC
-		//Disable bus errors on data fetch
-		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
-		auto sr = SCB_DisableDataFaults();
-	#endif
-
-	//Write header data to reserve the log entry
-	uint32_t logoff = sizeof(BankHeader) + m_firstFreeLogEntry*sizeof(LogEntry);
-	uint32_t header[3] = { m_firstFreeData, len, m_active->CRC(data, len) };
-	m_firstFreeLogEntry ++;
-	if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
+	unsafe
 	{
-		#ifdef HAVE_FLASH_ECC
-			SCB_EnableDataFaults(sr);
-		#endif
-		return false;
-	}
+		//Write header data to reserve the log entry
+		uint32_t logoff = sizeof(BankHeader) + m_firstFreeLogEntry*sizeof(LogEntry);
+		uint32_t header[3] = { m_firstFreeData, len, m_active->CRC(data, len) };
+		m_firstFreeLogEntry ++;
+		if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
+			return false;
 
-	//Write and verify object content
-	//(skip this if there's no data, empty objects are allowed and treated as nonexistent)
-	if(len != 0)
-	{
-		auto offset = m_firstFreeData;
-
-		//Blank check the region as a sanity check
-		auto base = m_active->GetBase();
-		while(true)
+		//Write and verify object content
+		//(skip this if there's no data, empty objects are allowed and treated as nonexistent)
+		if(len != 0)
 		{
-			bool blank = true;
-			for(uint32_t i=0; i<len; i++)
+			auto offset = m_firstFreeData;
+
+			//Blank check the region as a sanity check
+			auto base = m_active->GetBase();
+			while(true)
 			{
-				if(base[offset + i] != 0xff)
+				bool blank = true;
+				for(uint32_t i=0; i<len; i++)
 				{
-					blank = false;
+					if(base[offset + i] != 0xff)
+					{
+						blank = false;
+						break;
+					}
+				}
+
+				if(blank)
 					break;
-				}
-			}
 
-			if(blank)
-				break;
+				//not blank, move forward one write block and try again
+				m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + 1);
+				offset = m_firstFreeData;
 
-			//not blank, move forward one write block and try again
-			m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + 1);
-			offset = m_firstFreeData;
-
-			//If no longer enough space, try compacting
-			if(GetFreeDataSpace() < len)
-			{
-				if(!Compact())
+				//If no longer enough space, try compacting
+				if(GetFreeDataSpace() < len)
 				{
-					#ifdef HAVE_FLASH_ECC
-						SCB_EnableDataFaults(sr);
-					#endif
-					return false;
+					if(!Compact())
+						return false;
 				}
+				if(GetFreeDataSpace() < len)
+					return false;
 			}
-			if(GetFreeDataSpace() < len)
-			{
-				#ifdef HAVE_FLASH_ECC
-					SCB_EnableDataFaults(sr);
-				#endif
+
+			m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + len);
+			if(!m_active->Write(offset, data, len))
 				return false;
-			}
+			if(memcmp(data, base + offset, len) != 0)
+				return false;
 		}
 
-		m_firstFreeData = RoundUpToWriteBlockSize(m_firstFreeData + len);
-		if(!m_active->Write(offset, data, len))
-		{
-			#ifdef HAVE_FLASH_ECC
-				SCB_EnableDataFaults(sr);
-			#endif
+		//Write and verify object name
+		if(!m_active->Write(logoff, reinterpret_cast<uint8_t*>(key), KVS_NAMELEN))
 			return false;
-		}
-		if(memcmp(data, base + offset, len) != 0)
-		{
-			#ifdef HAVE_FLASH_ECC
-				SCB_EnableDataFaults(sr);
-			#endif
+		if(memcmp(key, m_active->GetBase() + logoff, KVS_NAMELEN) != 0)
 			return false;
-		}
 	}
-
-	//Write and verify object name
-	if(!m_active->Write(logoff, reinterpret_cast<uint8_t*>(key), KVS_NAMELEN))
-	{
-		#ifdef HAVE_FLASH_ECC
-			SCB_EnableDataFaults(sr);
-		#endif
-		return false;
-	}
-	if(memcmp(key, m_active->GetBase() + logoff, KVS_NAMELEN) != 0)
-	{
-		#ifdef HAVE_FLASH_ECC
-			SCB_EnableDataFaults(sr);
-		#endif
-		return false;
-	}
-
-	#ifdef HAVE_FLASH_ECC
-		SCB_EnableDataFaults(sr);
-	#endif
 
 	//All good!
 	return true;
@@ -439,12 +391,6 @@ bool KVS::StoreStringObjectIfNecessary(const char* name, const char* currentValu
  */
 bool KVS::Compact()
 {
-	#ifdef HAVE_FLASH_ECC
-		//Disable bus errors on data fetch
-		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
-		auto sr = SCB_DisableDataFaults();
-	#endif
-
 	const uint32_t cachesize = 16;
 	char cache[cachesize][KVS_NAMELEN];
 	memset(cache, 0xff, sizeof(cache));
@@ -457,104 +403,85 @@ bool KVS::Compact()
 	else
 		inactive = m_left;
 
-	//Erase the inactive bank and give it a header, but do NOT write the version number yet.
-	//If we're interrupted during the compaction, we want the block to read as invalid.
-	if(!inactive->Erase())
-	{
-		#ifdef HAVE_FLASH_ECC
-			SCB_EnableDataFaults(sr);
-		#endif
-		return false;
-	}
-
-	//Loop over the log and copy files one by one
 	auto base = m_active->GetBase();
 	auto log = m_active->GetLog();
 	auto outlog = inactive->GetLog();
 	uint32_t nextLog = 0;
 	uint32_t nextData = RoundUpToWriteBlockSize(sizeof(BankHeader) + m_defaultLogSize*sizeof(LogEntry));
-	for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
-	{
-		//See if this item is in the cache.
-		//If so, it was already copied so no need to do a full search of the log
-		bool found = false;
-		for(uint32_t j=0; j<cachesize; j++)
-		{
-			if(memcmp(cache[j], log[i].m_key, KVS_NAMELEN) == 0)
-			{
-				found = true;
-				break;
-			}
-		}
 
-		//Not in cache. Search the output log to see if it's there
-		if(!found)
+	unsafe
+	{
+		//Erase the inactive bank and give it a header, but do NOT write the version number yet.
+		//If we're interrupted during the compaction, we want the block to read as invalid.
+		if(!inactive->Erase())
+			return false;
+
+		//Loop over the log and copy objects one by one
+		for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
 		{
-			for(uint32_t j=0; j<nextLog; j++)
+			//See if this item is in the cache.
+			//If so, it was already copied so no need to do a full search of the log
+			bool found = false;
+			for(uint32_t j=0; j<cachesize; j++)
 			{
-				if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
+				if(memcmp(cache[j], log[i].m_key, KVS_NAMELEN) == 0)
 				{
 					found = true;
 					break;
 				}
 			}
-		}
 
-		//If found, we've already copied a newer version of the object.
-		//Discard this copy because it's obsolete
-		if(found)
-			continue;
-
-		//Not found. This is the most up to date version.
-		//Only write it if there's valid data (empty objects get removed during the compaction step)
-		if(log[i].m_len != 0)
-		{
-			//Copy the data first, then the log
-			if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
+			//Not in cache. Search the output log to see if it's there
+			if(!found)
 			{
-				#ifdef HAVE_FLASH_ECC
-					SCB_EnableDataFaults(sr);
-				#endif
-				return false;
-			}
-			LogEntry entry = log[i];
-			entry.m_start = nextData;
-			if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
-			{
-				#ifdef HAVE_FLASH_ECC
-					SCB_EnableDataFaults(sr);
-				#endif
-				return false;
+				for(uint32_t j=0; j<nextLog; j++)
+				{
+					if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
+					{
+						found = true;
+						break;
+					}
+				}
 			}
 
-			//Update pointers for next output
-			nextData = RoundUpToWriteBlockSize(nextData + log[i].m_len);
-			nextLog ++;
+			//If found, we've already copied a newer version of the object.
+			//Discard this copy because it's obsolete
+			if(found)
+				continue;
+
+			//Not found. This is the most up to date version.
+			//Only write it if there's valid data (empty objects get removed during the compaction step)
+			if(log[i].m_len != 0)
+			{
+				//Copy the data first, then the log
+				if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
+					return false;
+
+				LogEntry entry = log[i];
+				entry.m_start = nextData;
+				if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
+					return false;
+
+				//Update pointers for next output
+				nextData = RoundUpToWriteBlockSize(nextData + log[i].m_len);
+				nextLog ++;
+			}
+
+			//Add this entry to the cache of recently copied stuff
+			memcpy(cache[nextCache], log[i].m_key, KVS_NAMELEN);
+			nextCache = (nextCache + 1) % cachesize;
 		}
 
-		//Add this entry to the cache of recently copied stuff
-		memcpy(cache[nextCache], log[i].m_key, KVS_NAMELEN);
-		nextCache = (nextCache + 1) % cachesize;
+		//Write block header with the new version number
+		//Need to write the entire bank header in one go, since our flash write block size may be >4 bytes!
+		BankHeader header;
+		memset(&header, 0, sizeof(header));
+		header.m_magic = HEADER_MAGIC;
+		header.m_version = m_active->GetHeader()->m_version + 1;
+		header.m_logSize = m_defaultLogSize;
+		if(!inactive->Write(0, (uint8_t*)&header, sizeof(header)))
+			return false;
 	}
-
-	//Write block header with the new version number
-	//Need to write the entire bank header in one go, since our flash write block size may be >4 bytes!
-	BankHeader header;
-	memset(&header, 0, sizeof(header));
-	header.m_magic = HEADER_MAGIC;
-	header.m_version = m_active->GetHeader()->m_version + 1;
-	header.m_logSize = m_defaultLogSize;
-	if(!inactive->Write(0, (uint8_t*)&header, sizeof(header)))
-	{
-		#ifdef HAVE_FLASH_ECC
-			SCB_EnableDataFaults(sr);
-		#endif
-		return false;
-	}
-
-	#ifdef HAVE_FLASH_ECC
-		SCB_EnableDataFaults(sr);
-	#endif
 
 	//Done, switch banks
 	m_active = inactive;

@@ -280,4 +280,13 @@ protected:
 	uint32_t m_firstFreeData;
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Helper macro to disable data faults (but only if we have flash ECC)
+
+#ifdef HAVE_FLASH_ECC
+#define unsafe if(DataFaultDisabler df; 1)
+#else
+#define unsafe if(1)
+#endif
+
 #endif

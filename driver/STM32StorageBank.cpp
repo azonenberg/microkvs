@@ -43,12 +43,20 @@ extern Logger g_log;
 
 bool STM32StorageBank::Erase()
 {
-	return Flash::BlockErase(m_baseAddress);
+	bool err = Flash::BlockErase(m_baseAddress);
+	#ifdef HAVE_FLASH_ECC
+	Flash::ClearECCFaults();
+	#endif
+	return err;
 }
 
 bool STM32StorageBank::Write(uint32_t offset, const uint8_t* data, uint32_t len)
 {
-	return Flash::Write(GetBase() + offset, data, len);
+	bool err = Flash::Write(GetBase() + offset, data, len);
+	#ifdef HAVE_FLASH_ECC
+	Flash::ClearECCFaults();
+	#endif
+	return err;
 }
 
 //TODO: use CRC hard IP to speed this up!!
