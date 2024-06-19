@@ -541,58 +541,51 @@ void KVS::WipeAll()
  */
 uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 {
-	#ifdef HAVE_FLASH_ECC
-		//Disable bus errors on data fetch
-		//(this prevents flash corruption from causing an exception, we want to just ignore the corrupted data)
-		auto sr = SCB_DisableDataFaults();
-	#endif
-
 	uint32_t ret = 0;
 
-	//Start searching the log
-	auto len = m_active->GetHeader()->m_logSize;
-	auto base = m_active->GetLog();
-	for(uint32_t i=0; i<len; i++)
+	unsafe
 	{
-		//If start address is blank, this log entry was never written.
-		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-		if(base[i].m_start == 0xffffffff)
-			break;
-
-		//Ignore anything with an invalid CRC
-		if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) != base[i].m_crc)
-			continue;
-
-		//See if this object is already in the output list.
-		//If so, increment the number of copies and update the size (latest object is current)
-		bool found = false;
-		for(uint32_t j=0; j<ret; j++)
+		//Start searching the log
+		auto len = m_active->GetHeader()->m_logSize;
+		auto base = m_active->GetLog();
+		for(uint32_t i=0; i<len; i++)
 		{
-			if(memcmp(base[i].m_key, list[j].key, KVS_NAMELEN) == 0)
-			{
-				found = true;
-				list[j].size = base[i].m_len;
-				list[j].revs ++;
+			//If start address is blank, this log entry was never written.
+			//We must be at the end of the log. Whatever we've found by this point is all there is to find.
+			if(base[i].m_start == 0xffffffff)
 				break;
+
+			//Ignore anything with an invalid CRC
+			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) != base[i].m_crc)
+				continue;
+
+			//See if this object is already in the output list.
+			//If so, increment the number of copies and update the size (latest object is current)
+			bool found = false;
+			for(uint32_t j=0; j<ret; j++)
+			{
+				if(memcmp(base[i].m_key, list[j].key, KVS_NAMELEN) == 0)
+				{
+					found = true;
+					list[j].size = base[i].m_len;
+					list[j].revs ++;
+					break;
+				}
+			}
+
+			//If not found, add it
+			if(!found)
+			{
+				memcpy(list[ret].key, base[i].m_key, KVS_NAMELEN);
+				list[ret].key[KVS_NAMELEN] = '\0';
+				list[ret].size = base[i].m_len;
+				list[ret].revs = 1;
+				ret ++;
+				if(ret == size)
+					break;
 			}
 		}
-
-		//If not found, add it
-		if(!found)
-		{
-			memcpy(list[ret].key, base[i].m_key, KVS_NAMELEN);
-			list[ret].key[KVS_NAMELEN] = '\0';
-			list[ret].size = base[i].m_len;
-			list[ret].revs = 1;
-			ret ++;
-			if(ret == size)
-				break;
-		}
 	}
-
-	#ifdef HAVE_FLASH_ECC
-		SCB_EnableDataFaults(sr);
-	#endif
 
 	qsort(list, ret, sizeof(KVSListEntry), KVS::ListCompare);
 	return ret;
