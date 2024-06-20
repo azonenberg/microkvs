@@ -253,6 +253,8 @@ public:
 		return val;
 	}
 
+	uint32_t HeaderCRC(const LogEntry* log);
+
 protected:
 	void FindCurrentBank();
 	void ScanCurrentBank();

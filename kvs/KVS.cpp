@@ -183,6 +183,10 @@ LogEntry* KVS::FindObject(const char* name)
 			if(memcmp(base[i].m_key, key, KVS_NAMELEN) != 0)
 				continue;
 
+			//Check header CRC
+			if((base[i].m_headerCRC != 0) && (HeaderCRC(&base[i]) != base[i].m_headerCRC) )
+				continue;
+
 			//If CRC match, this is the latest log entry
 			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) == base[i].m_crc)
 				log = &base[i];
@@ -196,6 +200,14 @@ LogEntry* KVS::FindObject(const char* name)
 	}
 
 	return log;
+}
+
+/**
+	@brief Calculates the expected CRC of a log entry
+ */
+uint32_t KVS::HeaderCRC(const LogEntry* log)
+{
+	return m_active->CRC((const uint8_t*)log, KVS_NAMELEN + 2*sizeof(uint32_t));
 }
 
 /**
@@ -292,11 +304,24 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
 	if(GetFreeLogEntries() < 1)
 		return false;
 
+	//Calculate expected data CRC
+	auto dataCRC = m_active->CRC(data, len);
+
+	//Calculate expected header CRC
+	LogEntry tempHeader;
+	memset(&tempHeader, 0, sizeof(tempHeader));
+	memcpy(tempHeader.m_key, key, KVS_NAMELEN);
+	tempHeader.m_start = m_firstFreeData;
+	tempHeader.m_len = len;
+	tempHeader.m_crc = dataCRC;
+	tempHeader.m_headerCRC = 0;
+	auto headerCRC = HeaderCRC(&tempHeader);
+
 	unsafe
 	{
 		//Write header data to reserve the log entry
 		uint32_t logoff = sizeof(BankHeader) + m_firstFreeLogEntry*sizeof(LogEntry);
-		uint32_t header[3] = { m_firstFreeData, len, m_active->CRC(data, len) };
+		uint32_t header[4] = { m_firstFreeData, len, dataCRC, headerCRC};
 		m_firstFreeLogEntry ++;
 		if(!m_active->Write(logoff + KVS_NAMELEN, reinterpret_cast<uint8_t*>(&header[0]), sizeof(header)))
 			return false;
@@ -449,6 +474,14 @@ bool KVS::Compact()
 			if(found)
 				continue;
 
+			//If header CRC is invalid, ignore it
+			if((log[i].m_headerCRC != 0) && (HeaderCRC(&log[i]) != log[i].m_headerCRC) )
+				continue;
+
+			//If CRC is invalid, ignore the corrupted object
+			if(m_active->CRC(base + log[i].m_start, log[i].m_len) != log[i].m_crc)
+				continue;
+
 			//Not found. This is the most up to date version.
 			//Only write it if there's valid data (empty objects get removed during the compaction step)
 			if(log[i].m_len != 0)
@@ -459,6 +492,7 @@ bool KVS::Compact()
 
 				LogEntry entry = log[i];
 				entry.m_start = nextData;
+				entry.m_headerCRC = HeaderCRC(&entry);
 				if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
 					return false;
 
@@ -554,6 +588,10 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 			//We must be at the end of the log. Whatever we've found by this point is all there is to find.
 			if(base[i].m_start == 0xffffffff)
 				break;
+
+			//Ignore anything with invalid header CRC
+			if((base[i].m_headerCRC != 0) && (HeaderCRC(&base[i]) != base[i].m_headerCRC) )
+				continue;
 
 			//Ignore anything with an invalid CRC
 			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) != base[i].m_crc)

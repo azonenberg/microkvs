@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs                                                                                                             *
 *                                                                                                                      *
-* Copyright (c) 2021-2022 Andrew D. Zonenberg and contributors                                                         *
+* Copyright (c) 2021-2024 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -72,11 +72,12 @@ public:
 	char		m_key[KVS_NAMELEN];
 	uint32_t	m_start;
 	uint32_t	m_len;
-	uint32_t	m_crc;
+	uint32_t	m_crc;			//crc32 of packet content
+	uint32_t	m_headerCRC;	//crc32 of {key, start, len}
 
 	//pad to write block size
 	#ifdef MICROKVS_WRITE_BLOCK_SIZE
-	uint8_t		m_padding[MICROKVS_WRITE_BLOCK_SIZE - ((12 + KVS_NAMELEN) % MICROKVS_WRITE_BLOCK_SIZE)];
+	uint8_t		m_padding[MICROKVS_WRITE_BLOCK_SIZE - ((16 + KVS_NAMELEN) % MICROKVS_WRITE_BLOCK_SIZE)];
 	#endif
 };
 
