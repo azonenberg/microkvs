@@ -77,7 +77,9 @@ public:
 
 	//pad to write block size
 	#ifdef MICROKVS_WRITE_BLOCK_SIZE
-	uint8_t		m_padding[MICROKVS_WRITE_BLOCK_SIZE - ((16 + KVS_NAMELEN) % MICROKVS_WRITE_BLOCK_SIZE)];
+		#if MICROKVS_WRITE_BLOCK_SIZE >= 16
+			uint8_t		m_padding[MICROKVS_WRITE_BLOCK_SIZE - (16 % MICROKVS_WRITE_BLOCK_SIZE)];
+		#endif
 	#endif
 };
 
