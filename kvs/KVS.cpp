@@ -453,8 +453,6 @@ bool KVS::StoreStringObjectIfNecessary(const char* name, const char* currentValu
  */
 bool KVS::Compact()
 {
-	m_eccFault = false;
-
 	const uint32_t cachesize = 16;
 	char cache[cachesize][KVS_NAMELEN];
 	memset(cache, 0xff, sizeof(cache));
@@ -498,13 +496,27 @@ bool KVS::Compact()
 		{
 			for(uint32_t j=0; j<nextLog; j++)
 			{
-				if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
+				m_eccFault = false;
+
+				unsafe
 				{
-					found = true;
-					break;
+					if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
+					{
+						found = true;
+						break;
+					}
+				}
+
+				//if ECC fault, even if key is a match, skip this entry
+				if(m_eccFault)
+				{
+					found = false;
+					continue;
 				}
 			}
 		}
+
+		m_eccFault = false;
 
 		//If found, we've already copied a newer version of the object.
 		//Discard this copy because it's obsolete
