@@ -315,6 +315,8 @@ bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
  */
 bool KVS::StoreObjectInternal(const char* name, const uint8_t* data, uint32_t len)
 {
+	m_eccFault = false;
+
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
 	#pragma GCC diagnostic push
