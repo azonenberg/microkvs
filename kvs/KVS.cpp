@@ -159,6 +159,8 @@ void KVS::FindCurrentBank()
  */
 LogEntry* KVS::FindObject(const char* name)
 {
+	m_eccFault = false;
+
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
 	#pragma GCC diagnostic push
@@ -449,6 +451,8 @@ bool KVS::StoreStringObjectIfNecessary(const char* name, const char* currentValu
  */
 bool KVS::Compact()
 {
+	m_eccFault = false;
+
 	const uint32_t cachesize = 16;
 	char cache[cachesize][KVS_NAMELEN];
 	memset(cache, 0xff, sizeof(cache));
@@ -619,6 +623,8 @@ void KVS::WipeAll()
  */
 uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 {
+	m_eccFault = false;
+
 	uint32_t ret = 0;
 
 	//Start searching the log
@@ -646,7 +652,7 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 		if(m_eccFault)
 		{
 			m_eccFault = false;
-			g_log(Logger::WARNING, "KVS::FindObject: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+			g_log(Logger::WARNING, "KVS::EnumObjects: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
 				m_eccFaultAddr, m_eccFaultPC);
 			continue;
 		}
