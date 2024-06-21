@@ -74,6 +74,7 @@ KVS::KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize)
 	, m_defaultLogSize(defaultLogSize)
 	, m_firstFreeLogEntry(0)
 	, m_firstFreeData(0)
+	, m_eccFault(false)
 {
 	memset(g_blankKey, 0xff, KVS_NAMELEN);
 
@@ -167,18 +168,20 @@ LogEntry* KVS::FindObject(const char* name)
 
 	LogEntry* log = nullptr;
 
-	unsafe
+	//Start searching the log
+	auto len = m_active->GetHeader()->m_logSize;
+	auto base = m_active->GetLog();
+	for(uint32_t i=0; i<len; i++)
 	{
-		//Start searching the log
-		auto len = m_active->GetHeader()->m_logSize;
-		auto base = m_active->GetLog();
-		for(uint32_t i=0; i<len; i++)
-		{
-			//If start address is blank, this log entry was never written.
-			//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-			if(base[i].m_start == 0xffffffff)
-				break;
+		//If start address is blank, this log entry was never written.
+		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
+		if(base[i].m_start == 0xffffffff)
+			break;
 
+		bool crcok = false;
+
+		unsafe
+		{
 			//Skip anything without the right name
 			if(memcmp(base[i].m_key, key, KVS_NAMELEN) != 0)
 				continue;
@@ -187,17 +190,29 @@ LogEntry* KVS::FindObject(const char* name)
 			if((base[i].m_headerCRC != 0) && (HeaderCRC(&base[i]) != base[i].m_headerCRC) )
 				continue;
 
-			//If CRC match, this is the latest log entry
-			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) == base[i].m_crc)
-				log = &base[i];
-
-			//If CRC mismatch, entry is corrupted - fall back to the previous entry
+			//Check data CRC
+			crcok = (m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) == base[i].m_crc);
 		}
 
-		//If the log entry has no data, return null
-		if(log && (log->m_len == 0))
-			return nullptr;
+		//If ECC fault, this entry is invalid
+		if(m_eccFault)
+		{
+			m_eccFault = false;
+			g_log(Logger::WARNING, "KVS::FindObject: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
+			continue;
+		}
+
+		//If CRC match, this is the latest log entry
+		if(crcok)
+			log = &base[i];
+
+		//If CRC mismatch, entry is corrupted - fall back to the previous entry
 	}
+
+	//If the log entry has no data, return null
+	if(log && (log->m_len == 0))
+		return nullptr;
 
 	return log;
 }
@@ -270,6 +285,11 @@ bool KVS::InitializeBank(StorageBank* bank)
 
 	Any existing object by the same name is overwritten.
 
+	This function will try up to five times to store the object, returning an error only if all attempts are
+	unsuccessful.
+
+	This is	a workaround for (among others) STM32L431 errata 2.2.10.
+
 	@param name		Name of the object.
 					Names must be exactly KVS_NAMELEN bytes in size.
 					Shorter names are padded to KVS_NAMELEN with 0x00 bytes.
@@ -279,6 +299,19 @@ bool KVS::InitializeBank(StorageBank* bank)
 	@param len		Length of the object
  */
 bool KVS::StoreObject(const char* name, const uint8_t* data, uint32_t len)
+{
+	for(int i=0; i<5; i++)
+	{
+		if(StoreObjectInternal(name, data, len))
+			return true;
+	}
+	return false;
+}
+
+/**
+	@brief Core of StoreObject
+ */
+bool KVS::StoreObjectInternal(const char* name, const uint8_t* data, uint32_t len)
 {
 	//Actual lookup key: zero padded if too short, but not guaranteed to be null terminated
 	char key[KVS_NAMELEN] = {0};
@@ -434,46 +467,46 @@ bool KVS::Compact()
 	uint32_t nextLog = 0;
 	uint32_t nextData = RoundUpToWriteBlockSize(sizeof(BankHeader) + m_defaultLogSize*sizeof(LogEntry));
 
-	unsafe
-	{
-		//Erase the inactive bank and give it a header, but do NOT write the version number yet.
-		//If we're interrupted during the compaction, we want the block to read as invalid.
-		if(!inactive->Erase())
-			return false;
+	//Erase the inactive bank and give it a header, but do NOT write the version number yet.
+	//If we're interrupted during the compaction, we want the block to read as invalid.
+	if(!inactive->Erase())
+		return false;
 
-		//Loop over the log and copy objects one by one
-		for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
+	//Loop over the log and copy objects one by one
+	for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
+	{
+		//See if this item is in the cache.
+		//If so, it was already copied so no need to do a full search of the log
+		bool found = false;
+		for(uint32_t j=0; j<cachesize; j++)
 		{
-			//See if this item is in the cache.
-			//If so, it was already copied so no need to do a full search of the log
-			bool found = false;
-			for(uint32_t j=0; j<cachesize; j++)
+			if(memcmp(cache[j], log[i].m_key, KVS_NAMELEN) == 0)
 			{
-				if(memcmp(cache[j], log[i].m_key, KVS_NAMELEN) == 0)
+				found = true;
+				break;
+			}
+		}
+
+		//Not in cache. Search the output log to see if it's there
+		if(!found)
+		{
+			for(uint32_t j=0; j<nextLog; j++)
+			{
+				if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
 				{
 					found = true;
 					break;
 				}
 			}
+		}
 
-			//Not in cache. Search the output log to see if it's there
-			if(!found)
-			{
-				for(uint32_t j=0; j<nextLog; j++)
-				{
-					if(memcmp(outlog[j].m_key, log[i].m_key, KVS_NAMELEN) == 0)
-					{
-						found = true;
-						break;
-					}
-				}
-			}
+		//If found, we've already copied a newer version of the object.
+		//Discard this copy because it's obsolete
+		if(found)
+			continue;
 
-			//If found, we've already copied a newer version of the object.
-			//Discard this copy because it's obsolete
-			if(found)
-				continue;
-
+		unsafe
+		{
 			//If header CRC is invalid, ignore it
 			if((log[i].m_headerCRC != 0) && (HeaderCRC(&log[i]) != log[i].m_headerCRC) )
 				continue;
@@ -481,41 +514,52 @@ bool KVS::Compact()
 			//If CRC is invalid, ignore the corrupted object
 			if(m_active->CRC(base + log[i].m_start, log[i].m_len) != log[i].m_crc)
 				continue;
-
-			//Not found. This is the most up to date version.
-			//Only write it if there's valid data (empty objects get removed during the compaction step)
-			if(log[i].m_len != 0)
-			{
-				//Copy the data first, then the log
-				if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
-					return false;
-
-				LogEntry entry = log[i];
-				entry.m_start = nextData;
-				entry.m_headerCRC = HeaderCRC(&entry);
-				if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
-					return false;
-
-				//Update pointers for next output
-				nextData = RoundUpToWriteBlockSize(nextData + log[i].m_len);
-				nextLog ++;
-			}
-
-			//Add this entry to the cache of recently copied stuff
-			memcpy(cache[nextCache], log[i].m_key, KVS_NAMELEN);
-			nextCache = (nextCache + 1) % cachesize;
 		}
 
-		//Write block header with the new version number
-		//Need to write the entire bank header in one go, since our flash write block size may be >4 bytes!
-		BankHeader header;
-		memset(&header, 0, sizeof(header));
-		header.m_magic = HEADER_MAGIC;
-		header.m_version = m_active->GetHeader()->m_version + 1;
-		header.m_logSize = m_defaultLogSize;
-		if(!inactive->Write(0, (uint8_t*)&header, sizeof(header)))
-			return false;
+		//If ECC fault, this entry is invalid
+		//If ECC fault, this entry is invalid
+		if(m_eccFault)
+		{
+			m_eccFault = false;
+			g_log(Logger::WARNING, "KVS::Compact: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
+
+			continue;
+		}
+
+		//Not found. This is the most up to date version.
+		//Only write it if there's valid data (empty objects get removed during the compaction step)
+		if(log[i].m_len != 0)
+		{
+			//Copy the data first, then the log
+			if(!inactive->Write(nextData, base + log[i].m_start, log[i].m_len))
+				return false;
+
+			LogEntry entry = log[i];
+			entry.m_start = nextData;
+			entry.m_headerCRC = HeaderCRC(&entry);
+			if(!inactive->Write(sizeof(BankHeader) + nextLog*sizeof(LogEntry), (uint8_t*)&entry, sizeof(entry)))
+				return false;
+
+			//Update pointers for next output
+			nextData = RoundUpToWriteBlockSize(nextData + log[i].m_len);
+			nextLog ++;
+		}
+
+		//Add this entry to the cache of recently copied stuff
+		memcpy(cache[nextCache], log[i].m_key, KVS_NAMELEN);
+		nextCache = (nextCache + 1) % cachesize;
 	}
+
+	//Write block header with the new version number
+	//Need to write the entire bank header in one go, since our flash write block size may be >4 bytes!
+	BankHeader header;
+	memset(&header, 0, sizeof(header));
+	header.m_magic = HEADER_MAGIC;
+	header.m_version = m_active->GetHeader()->m_version + 1;
+	header.m_logSize = m_defaultLogSize;
+	if(!inactive->Write(0, (uint8_t*)&header, sizeof(header)))
+		return false;
 
 	//Done, switch banks
 	m_active = inactive;
@@ -577,18 +621,18 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 {
 	uint32_t ret = 0;
 
-	unsafe
+	//Start searching the log
+	auto len = m_active->GetHeader()->m_logSize;
+	auto base = m_active->GetLog();
+	for(uint32_t i=0; i<len; i++)
 	{
-		//Start searching the log
-		auto len = m_active->GetHeader()->m_logSize;
-		auto base = m_active->GetLog();
-		for(uint32_t i=0; i<len; i++)
-		{
-			//If start address is blank, this log entry was never written.
-			//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-			if(base[i].m_start == 0xffffffff)
-				break;
+		//If start address is blank, this log entry was never written.
+		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
+		if(base[i].m_start == 0xffffffff)
+			break;
 
+		unsafe
+		{
 			//Ignore anything with invalid header CRC
 			if((base[i].m_headerCRC != 0) && (HeaderCRC(&base[i]) != base[i].m_headerCRC) )
 				continue;
@@ -596,32 +640,41 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 			//Ignore anything with an invalid CRC
 			if(m_active->CRC(m_active->GetBase() + base[i].m_start, base[i].m_len) != base[i].m_crc)
 				continue;
+		}
 
-			//See if this object is already in the output list.
-			//If so, increment the number of copies and update the size (latest object is current)
-			bool found = false;
-			for(uint32_t j=0; j<ret; j++)
-			{
-				if(memcmp(base[i].m_key, list[j].key, KVS_NAMELEN) == 0)
-				{
-					found = true;
-					list[j].size = base[i].m_len;
-					list[j].revs ++;
-					break;
-				}
-			}
+		//If ECC fault, this entry is invalid
+		if(m_eccFault)
+		{
+			m_eccFault = false;
+			g_log(Logger::WARNING, "KVS::FindObject: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
+			continue;
+		}
 
-			//If not found, add it
-			if(!found)
+		//See if this object is already in the output list.
+		//If so, increment the number of copies and update the size (latest object is current)
+		bool found = false;
+		for(uint32_t j=0; j<ret; j++)
+		{
+			if(memcmp(base[i].m_key, list[j].key, KVS_NAMELEN) == 0)
 			{
-				memcpy(list[ret].key, base[i].m_key, KVS_NAMELEN);
-				list[ret].key[KVS_NAMELEN] = '\0';
-				list[ret].size = base[i].m_len;
-				list[ret].revs = 1;
-				ret ++;
-				if(ret == size)
-					break;
+				found = true;
+				list[j].size = base[i].m_len;
+				list[j].revs ++;
+				break;
 			}
+		}
+
+		//If not found, add it
+		if(!found)
+		{
+			memcpy(list[ret].key, base[i].m_key, KVS_NAMELEN);
+			list[ret].key[KVS_NAMELEN] = '\0';
+			list[ret].size = base[i].m_len;
+			list[ret].revs = 1;
+			ret ++;
+			if(ret == size)
+				break;
 		}
 	}
 

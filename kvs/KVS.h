@@ -65,6 +65,23 @@ class KVS
 public:
 	KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize);
 
+	/**
+		@brief Exception handler
+
+		If your MCU throws bus faults, NMIs, or similar when ECC faults occur, some special handling is needed
+		for resilience to power outages during writes.
+
+		You will need to catch the exception and detect if it is caused by a bad flash access within the KVS region.
+		If so, call this function with the offending address then return to the instruction after the one which
+		triggered the fault.
+	 */
+	void OnUncorrectableECCFault(uint32_t flashAddr, uint32_t insnAddr)
+	{
+		m_eccFault = true;
+		m_eccFaultAddr = flashAddr;
+		m_eccFaultPC = insnAddr;
+	}
+
 	//Main API
 	LogEntry* FindObject(const char* name);
 
@@ -256,6 +273,8 @@ public:
 	uint32_t HeaderCRC(const LogEntry* log);
 
 protected:
+	bool StoreObjectInternal(const char* name, const uint8_t* data, uint32_t len);
+
 	void FindCurrentBank();
 	void ScanCurrentBank();
 
@@ -280,6 +299,15 @@ protected:
 
 	///@brief Offset (from start of block) of the first free data byte
 	uint32_t m_firstFreeData;
+
+	///@brief Error flag thrown from NMI/fault handler
+	volatile bool m_eccFault;
+
+	///@brief Bad flash address when m_eccFault was set
+	volatile uint32_t m_eccFaultAddr;
+
+	///@brief Program counter value when m_eccFault was set
+	volatile uint32_t m_eccFaultPC;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
