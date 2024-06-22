@@ -91,21 +91,34 @@ KVS::KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize)
 void KVS::ScanCurrentBank()
 {
 	//Find free space
+	//Scan the entire log beginning to end to account for used space
+	//(This is needed so that we can properly ignore corrupted entries)
 	auto log = m_active->GetLog();
 	auto logsize = m_active->GetHeader()->m_logSize;
 	m_firstFreeLogEntry = logsize-1;
 	LogEntry* lastlog = nullptr;
-	for(int64_t i = logsize-1; i >= 0; i --)
+	for(int64_t i = 0; i<logsize; i++)
 	{
 		m_eccFault = false;
 
 		unsafe
 		{
-			//Stop if this entry was used
+			//Log entry is not blank
 			if( (log[i].m_start != 0xffffffff) || (log[i].m_len != 0xffffffff) )
 			{
+				//Validate it, discarding anything corrupted
+				if(log[i].m_headerCRC != HeaderCRC(&log[i]))
+					continue;
+
+				//If it's good, save the pointer
 				if(!m_eccFault)
 					lastlog = &log[i];
+			}
+
+			//It's blank, mark it as available
+			else
+			{
+				m_firstFreeLogEntry = i;
 				break;
 			}
 		}
@@ -115,11 +128,8 @@ void KVS::ScanCurrentBank()
 		{
 			g_log(Logger::WARNING, "KVS::ScanCurrentBank: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
 				m_eccFaultAddr, m_eccFaultPC);
-			break;
+			continue;
 		}
-
-		//Nope, this entry is blank (thus free for future use)
-		m_firstFreeLogEntry = i;
 	}
 
 	//If nothing in the log, free data area starts right after the log area
