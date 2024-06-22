@@ -110,6 +110,10 @@ void KVS::ScanCurrentBank()
 				if(log[i].m_headerCRC != HeaderCRC(&log[i]))
 					continue;
 
+				//Validate object pointers
+				if(log[i].m_start + log[i] >= GetBlockSize() )
+					continue;
+
 				//If it's good, save the pointer
 				if(!m_eccFault)
 					lastlog = &log[i];
