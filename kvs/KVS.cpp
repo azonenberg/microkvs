@@ -138,11 +138,44 @@ void KVS::ScanCurrentBank()
  */
 void KVS::FindCurrentBank()
 {
-	//See which block(s) have valid headers
 	auto lh = m_left->GetHeader();
 	auto rh = m_right->GetHeader();
-	bool leftValid = (lh->m_magic == HEADER_MAGIC);
-	bool rightValid = (rh->m_magic == HEADER_MAGIC);
+
+	bool leftValid = false;
+	bool rightValid = false;
+
+	unsafe
+	{
+		m_eccFault = false;
+
+		//See which block(s) have valid headers
+		//Header magic number must be valid, but log size (last field written) must also be sane
+		//(if we interrupt midway through a compact operation we might not have the full block header written)
+		//Assume any log size >2GB is invalid since we're running on tiny MCUs
+		leftValid = (lh->m_magic == HEADER_MAGIC);
+		if(lh->m_logSize > 0x80000000)
+			leftValid = false;
+		if(m_eccFault)
+		{
+			leftValid = false;
+
+			g_log(Logger::WARNING, "KVS::FindCurrentBank: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
+			m_eccFault = false;
+		}
+
+		rightValid = (rh->m_magic == HEADER_MAGIC);
+		if(rh->m_logSize > 0x80000000)
+			rightValid = false;
+		if(m_eccFault)
+		{
+			rightValid = false;
+
+			g_log(Logger::WARNING, "KVS::FindCurrentBank: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
+			m_eccFault = false;
+		}
+	}
 
 	//If NEITHER bank is valid, we have a blank chip.
 	//Initialize and declare the left one active.
