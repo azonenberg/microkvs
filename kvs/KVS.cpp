@@ -94,13 +94,27 @@ void KVS::ScanCurrentBank()
 	auto log = m_active->GetLog();
 	auto logsize = m_active->GetHeader()->m_logSize;
 	m_firstFreeLogEntry = logsize-1;
-	LogEntry* lastlog = NULL;
+	LogEntry* lastlog = nullptr;
 	for(int64_t i = logsize-1; i >= 0; i --)
 	{
-		//Stop if this entry was used
-		if( (log[i].m_start != 0xffffffff) || (log[i].m_len != 0xffffffff) )
+		m_eccFault = false;
+
+		unsafe
 		{
-			lastlog = &log[i];
+			//Stop if this entry was used
+			if( (log[i].m_start != 0xffffffff) || (log[i].m_len != 0xffffffff) )
+			{
+				if(!m_eccFault)
+					lastlog = &log[i];
+				break;
+			}
+		}
+
+		//This entry is corrupted, and thus not available
+		if(m_eccFault)
+		{
+			g_log(Logger::WARNING, "KVS::ScanCurrentBank: uncorrectable ECC error at address 0x%08x (pc=%08x)\n",
+				m_eccFaultAddr, m_eccFaultPC);
 			break;
 		}
 
