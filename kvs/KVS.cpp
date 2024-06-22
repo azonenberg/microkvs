@@ -111,7 +111,7 @@ void KVS::ScanCurrentBank()
 					continue;
 
 				//Validate object pointers
-				if(log[i].m_start + log[i] >= GetBlockSize() )
+				if(log[i].m_start + log[i].m_len >= GetBlockSize() )
 					continue;
 
 				//If it's good, save the pointer
