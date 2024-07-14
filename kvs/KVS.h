@@ -42,9 +42,7 @@
 
 #include <stdint.h>
 #include "../driver/StorageBank.h"
-
-//TODO: make this an optional component?
-#include <stm32-cpp/src/util/StringBuffer.h>
+#include <embedded-utils/StringBuffer.h>
 
 /**
 	@brief A list entry used for enumerating the content of the KVS

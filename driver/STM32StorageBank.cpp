@@ -38,7 +38,7 @@
 #include <peripheral/Flash.h>
 #include "STM32StorageBank.h"
 
-#include <util/Logger.h>
+#include <embedded-utils/Logger.h>
 extern Logger g_log;
 
 bool STM32StorageBank::Erase()
