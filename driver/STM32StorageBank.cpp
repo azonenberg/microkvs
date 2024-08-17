@@ -34,7 +34,7 @@
  */
 #include <stdint.h>
 #include <memory.h>
-#include <stm32fxxx.h>
+#include <stm32.h>
 #include <peripheral/Flash.h>
 #include "STM32StorageBank.h"
 
