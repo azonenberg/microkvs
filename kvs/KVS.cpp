@@ -57,6 +57,14 @@ template bool KVS::StoreObjectIfNecessary(const char* name, uint16_t currentValu
 
 template bool KVS::StoreObjectIfNecessary(uint16_t currentValue, uint16_t defaultValue, const char* format, ...);
 
+#ifdef STM32L031
+#define BLANK_FLASH_BYTE 0x00
+#define BLANK_FLASH_X32 0x00000000
+#else
+#define BLANK_FLASH_BYTE 0xff
+#define BLANK_FLASH_X32 0xffffffff
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Construction / destruction
 
@@ -76,7 +84,7 @@ KVS::KVS(StorageBank* left, StorageBank* right, uint32_t defaultLogSize)
 	, m_firstFreeData(0)
 	, m_eccFault(false)
 {
-	memset(g_blankKey, 0xff, KVS_NAMELEN);
+	memset(g_blankKey, BLANK_FLASH_BYTE, KVS_NAMELEN);
 
 	FindCurrentBank();
 	ScanCurrentBank();
@@ -104,7 +112,7 @@ void KVS::ScanCurrentBank()
 		unsafe
 		{
 			//Log entry is not blank
-			if( (log[i].m_start != 0xffffffff) || (log[i].m_len != 0xffffffff) )
+			if( (log[i].m_start != BLANK_FLASH_X32) || (log[i].m_len != BLANK_FLASH_X32) )
 			{
 				//Validate it, discarding anything corrupted
 				if(log[i].m_headerCRC != HeaderCRC(&log[i]))
@@ -207,7 +215,7 @@ void KVS::FindCurrentBank()
 
 	//If BOTH banks are active, the higher version number is our active bank
 	//(as long as that version number isn't invalid)
-	else if( (lh->m_version > rh->m_version) && (lh->m_version != 0xffffffff) )
+	else if( (lh->m_version > rh->m_version) && (lh->m_version != BLANK_FLASH_X32) )
 		m_active = m_left;
 	else
 		m_active = m_right;
@@ -238,7 +246,7 @@ LogEntry* KVS::FindObject(const char* name)
 	{
 		//If start address is blank, this log entry was never written.
 		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-		if(base[i].m_start == 0xffffffff)
+		if(base[i].m_start == BLANK_FLASH_X32)
 			break;
 
 		bool crcok = false;
@@ -357,7 +365,7 @@ bool KVS::InitializeBank(StorageBank* bank)
 					Names must be exactly KVS_NAMELEN bytes in size.
 					Shorter names are padded to KVS_NAMELEN with 0x00 bytes.
 					Longer names are truncated.
-					The name 0xFF...FF is reserved and may not be used for an object.
+					The names 0x00..00 0xFF...FF are reserved and may not be used for an object.
 	@param data		Object content
 	@param len		Length of the object
  */
@@ -437,7 +445,7 @@ bool KVS::StoreObjectInternal(const char* name, const uint8_t* data, uint32_t le
 				bool blank = true;
 				for(uint32_t i=0; i<len; i++)
 				{
-					if(base[offset + i] != 0xff)
+					if(base[offset + i] != BLANK_FLASH_BYTE)
 					{
 						blank = false;
 						break;
@@ -456,6 +464,7 @@ bool KVS::StoreObjectInternal(const char* name, const uint8_t* data, uint32_t le
 				{
 					if(!Compact())
 						return false;
+					offset = m_firstFreeData;
 				}
 				if(GetFreeDataSpace() < len)
 					return false;
@@ -516,7 +525,7 @@ bool KVS::Compact()
 {
 	const uint32_t cachesize = 16;
 	char cache[cachesize][KVS_NAMELEN];
-	memset(cache, 0xff, sizeof(cache));
+	memset(cache, BLANK_FLASH_BYTE, sizeof(cache));
 	uint32_t nextCache = 0;
 
 	//Find the INACTIVE storage bank
@@ -538,7 +547,7 @@ bool KVS::Compact()
 		return false;
 
 	//Loop over the log and copy objects one by one
-	for(int64_t i = m_firstFreeLogEntry-1; i>=0; i--)
+	for(int64_t i = static_cast<int64_t>(m_firstFreeLogEntry)-1; i>=0; i--)
 	{
 		//See if this item is in the cache.
 		//If so, it was already copied so no need to do a full search of the log
@@ -709,7 +718,7 @@ uint32_t KVS::EnumObjects(KVSListEntry* list, uint32_t size)
 	{
 		//If start address is blank, this log entry was never written.
 		//We must be at the end of the log. Whatever we've found by this point is all there is to find.
-		if(base[i].m_start == 0xffffffff)
+		if(base[i].m_start == BLANK_FLASH_X32)
 			break;
 
 		unsafe
