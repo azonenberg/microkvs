@@ -2,6 +2,7 @@
 # Intended to be integrated into a larger project, not built standalone.
 
 add_library(microkvs STATIC
+	driver/STM32QSPIStorageBank.cpp
 	driver/STM32StorageBank.cpp
 	driver/TestStorageBank.cpp
 

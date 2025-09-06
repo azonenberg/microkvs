@@ -30,28 +30,38 @@
 /**
 	@file
 	@author	Andrew D. Zonenberg
-	@brief	Declaration of STM32StorageBank
+	@brief	Declaration of STM32QSPIStorageBank
  */
 
-#ifndef STM32StorageBank_h
-#define STM32StorageBank_h
+#ifndef STM32QSPIStorageBank_h
+#define STM32QSPIStorageBank_h
 
+#include <stm32.h>
+#include <embedded-utils/QuadSPI_SpiFlashInterface.h>
 #include <string.h>
 #include "StorageBank.h"
 
+#ifdef HAVE_QUADSPI
+
 /**
-	@brief A StorageBank backed by STM32 flash
+	@brief A StorageBank backed by STM32QSPI flash
  */
-class STM32StorageBank : public StorageBank
+class STM32QSPIStorageBank : public StorageBank
 {
 public:
-	STM32StorageBank(uint8_t* ptr, uint32_t size)
+	STM32QSPIStorageBank(QuadSPI_SpiFlashInterface& qspi, uint8_t* ptr, uint32_t size)
 	: StorageBank(ptr, size)
+	, m_qspi(qspi)
 	{}
 
 	virtual bool Erase();
 	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len);
 	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size);
+
+protected:
+	QuadSPI_SpiFlashInterface& m_qspi;
 };
+
+#endif
 
 #endif

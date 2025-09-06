@@ -30,28 +30,53 @@
 /**
 	@file
 	@author	Andrew D. Zonenberg
-	@brief	Declaration of STM32StorageBank
+	@brief	Implementation of STM32QSPIStorageBank
  */
+#include <stdint.h>
+#include <memory.h>
+#include <stm32.h>
+#include <peripheral/Flash.h>
+#include "STM32QSPIStorageBank.h"
 
-#ifndef STM32StorageBank_h
-#define STM32StorageBank_h
+#include <embedded-utils/Logger.h>
+extern Logger g_log;
 
-#include <string.h>
-#include "StorageBank.h"
+#ifdef HAVE_QUADSPI
 
-/**
-	@brief A StorageBank backed by STM32 flash
- */
-class STM32StorageBank : public StorageBank
+bool STM32QSPIStorageBank::Erase()
 {
-public:
-	STM32StorageBank(uint8_t* ptr, uint32_t size)
-	: StorageBank(ptr, size)
-	{}
+	m_qspi.EraseSector(m_baseAddress);
+	return true;
+}
 
-	virtual bool Erase();
-	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len);
-	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size);
-};
+bool STM32QSPIStorageBank::Write(uint32_t offset, const uint8_t* data, uint32_t len)
+{
+	m_qspi.Write(GetBase() + offset, data, len);
+	return true;
+}
+
+//TODO: use CRC hard IP to speed this up!!
+uint32_t STM32QSPIStorageBank::CRC(const uint8_t* ptr, uint32_t size)
+{
+	uint32_t poly = 0xedb88320;
+
+	uint32_t crc = 0xffffffff;
+	for(size_t n=0; n < size; n++)
+	{
+		uint8_t d = ptr[n];
+		for(int i=0; i<8; i++)
+		{
+			bool b = ( crc ^ (d >> i) ) & 1;
+			crc >>= 1;
+			if(b)
+				crc ^= poly;
+		}
+	}
+
+	return ~(	((crc & 0x000000ff) << 24) |
+				((crc & 0x0000ff00) << 8) |
+				((crc & 0x00ff0000) >> 8) |
+				 (crc >> 24) );
+}
 
 #endif
