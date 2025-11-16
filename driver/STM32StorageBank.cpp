@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * microkvs                                                                                                             *
 *                                                                                                                      *
-* Copyright (c) 2021-2024 Andrew D. Zonenberg and contributors                                                         *
+* Copyright (c) 2021-2025 Andrew D. Zonenberg and contributors                                                         *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -40,6 +40,8 @@
 
 #include <embedded-utils/Logger.h>
 extern Logger g_log;
+
+#ifndef NO_INTERNAL_FLASH
 
 bool STM32StorageBank::Erase()
 {
@@ -82,3 +84,5 @@ uint32_t STM32StorageBank::CRC(const uint8_t* ptr, uint32_t size)
 				((crc & 0x00ff0000) >> 8) |
 				 (crc >> 24) );
 }
+
+#endif

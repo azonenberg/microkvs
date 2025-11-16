@@ -39,6 +39,8 @@
 #include <string.h>
 #include "StorageBank.h"
 
+#ifndef NO_INTERNAL_FLASH
+
 /**
 	@brief A StorageBank backed by STM32 flash
  */
@@ -53,5 +55,7 @@ public:
 	virtual bool Write(uint32_t offset, const uint8_t* data, uint32_t len);
 	virtual uint32_t CRC(const uint8_t* ptr, uint32_t size);
 };
+
+#endif
 
 #endif
